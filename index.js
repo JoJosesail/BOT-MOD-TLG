@@ -1,5 +1,5 @@
 require('dotenv').config(); // Cargar variables de entorno desde el archivo .env
-const TelegramBot = require('node-telegram-bot-api').default || require('node-telegram-bot-api');
+const TelegramBot = require('node-telegram-bot-api');
 const Jimp = require('jimp');
 const jsQR = require('jsqr');
 const cron = require('node-cron');
