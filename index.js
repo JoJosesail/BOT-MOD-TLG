@@ -5,7 +5,6 @@ const jsQR = require('jsqr');
 const cron = require('node-cron');
 const mongoose = require('mongoose');
 
-// Importamos los moldes de la base de datos
 const Usuario = require('./models/Usuario');
 const ConfigGrupo = require('./models/ConfigGrupo');
 
@@ -14,7 +13,6 @@ if (!process.env.TELEGRAM_TOKEN || !process.env.MONGO_URI) {
     process.exit(1);
 }
 
-// Conexión a MongoDB Atlas
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('🟢 Conectado exitosamente a MongoDB Atlas'))
     .catch(err => {
@@ -24,15 +22,12 @@ mongoose.connect(process.env.MONGO_URI)
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 
-// --- LISTA DE ADMINISTRADORES AUTORIZADOS ---
-// Puedes agregar más IDs separados por comas, ej: [798501790, 987654321]
+// Tu ID de administrador global
 const ADMINS_AUTORIZADOS = [798501790]; 
 
-// Función auxiliar para verificar si un usuario es admin (por ID o por rol de Telegram)
+// Función para verificar si es admin en un chat específico
 async function esAdmin(chatId, userId) {
     if (ADMINS_AUTORIZADOS.includes(userId)) return true;
-    
-    // Si se ejecuta en un grupo, consultamos también los rangos oficiales de Telegram
     if (chatId < 0) {
         try {
             const admins = await bot.getChatAdministrators(chatId);
@@ -44,7 +39,6 @@ async function esAdmin(chatId, userId) {
     return false;
 }
 
-// --- MANTENIMIENTO: Limpieza masiva diaria de strikes ---
 cron.schedule('0 0 * * *', async () => {
     try {
         await Usuario.updateMany({}, { $set: { strikes: 0 } });
@@ -54,69 +48,69 @@ cron.schedule('0 0 * * *', async () => {
     }
 });
 
-// --- COMANDO RÁPIDO: Obtener ID propio en privado ---
 bot.onText(/\/myid/, (msg) => {
     if (msg.chat.type === 'private') {
         bot.sendMessage(msg.chat.id, `Tu ID de Telegram es: \`${msg.from.id}\``, { parse_mode: 'Markdown' });
     }
 });
 
-// --- COMANDO: Agregar link permitido (Privado y Seguro) ---
+// --- COMANDO: Agregar link permitido (Funciona dentro del grupo) ---
 bot.onText(/\/permitir (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const dominioNuevo = match[1].trim().toLowerCase();
 
-    if (!(await esAdmin(chatId, userId))) return;
-
-    // Si el comando se usó en el grupo, lo borramos para mantenerlo oculto
-    if (msg.chat.type !== 'private') {
-        bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+    // Si se ejecuta en privado, no se puede saber a qué grupo aplicar sin especificarlo
+    if (chatId > 0) {
+        bot.sendMessage(chatId, "⚠️ Por favor, usa este comando **dentro del grupo** que deseas configurar.", { parse_mode: 'Markdown' });
+        return;
     }
 
-    try {
-        // Nota: Si usas esto por privado, guardamos el dominio para el grupo principal o general. 
-        // Aquí tomamos un chatId de referencia (idealmente tu grupo). Si estás en privado, puedes asignarlo a tu grupo principal.
-        const targetChatId = msg.chat.type === 'private' ? ADMINS_AUTORIZADOS[0] : chatId; // O ajusta según tu grupo
+    if (!(await esAdmin(chatId, userId))) return;
 
-        let config = await ConfigGrupo.findOne({ chatId: targetChatId });
+    bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+
+    try {
+        let config = await ConfigGrupo.findOne({ chatId: chatId });
         if (!config) {
-            config = new ConfigGrupo({ chatId: targetChatId, linksPermitidos: [] });
+            config = new ConfigGrupo({ chatId: chatId, linksPermitidos: [] });
         }
 
         if (!config.linksPermitidos.includes(dominioNuevo)) {
             config.linksPermitidos.push(dominioNuevo);
             await config.save();
-            bot.sendMessage(userId, `✅ **Dominio Autorizado:** \`${dominioNuevo}\` agregado correctamente a la lista blanca.`, { parse_mode: 'Markdown' });
+            bot.sendMessage(userId, `✅ **Dominio Autorizado:** \`${dominioNuevo}\` agregado a la lista blanca de este grupo.`, { parse_mode: 'Markdown' });
         } else {
-            bot.sendMessage(userId, `ℹ️ El dominio \`${dominioNuevo}\` ya estaba en la lista permitida.`, { parse_mode: 'Markdown' });
+            bot.sendMessage(userId, `ℹ️ El dominio \`${dominioNuevo}\` ya estaba autorizado.`, { parse_mode: 'Markdown' });
         }
     } catch (error) {
         console.error('Error en /permitir:', error.message);
     }
 });
 
-// --- COMANDO: Ver links permitidos (Envío Privado) ---
+// --- COMANDO: Ver links permitidos (Dentro del grupo) ---
 bot.onText(/\/linkspermitidos/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
 
-    if (!(await esAdmin(chatId, userId))) return;
-
-    if (msg.chat.type !== 'private') {
-        bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+    if (chatId > 0) {
+        bot.sendMessage(chatId, "⚠️ Por favor, usa este comando **dentro del grupo** que deseas consultar.", { parse_mode: 'Markdown' });
+        return;
     }
 
+    if (!(await esAdmin(chatId, userId))) return;
+
+    bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+
     try {
-        const targetChatId = msg.chat.type === 'private' ? ADMINS_AUTORIZADOS[0] : chatId;
-        const config = await ConfigGrupo.findOne({ chatId: targetChatId });
+        const config = await ConfigGrupo.findOne({ chatId: chatId });
         
         if (!config || config.linksPermitidos.length === 0) {
-            bot.sendMessage(userId, '📋 **Lista Blanca:** No hay dominios permitidos configurados.', { parse_mode: 'Markdown' });
+            bot.sendMessage(userId, '📋 **Lista Blanca:** No hay dominios permitidos en este grupo.', { parse_mode: 'Markdown' });
             return;
         }
 
-        let mensaje = '📋 **Dominios Permitidos:**\n\n';
+        let mensaje = '📋 **Dominios Permitidos en este Grupo:**\n\n';
         config.linksPermitidos.forEach((link, idx) => {
             mensaje += `${idx + 1}. \`${link}\`\n`;
         });
@@ -127,14 +121,17 @@ bot.onText(/\/linkspermitidos/, async (msg) => {
     }
 });
 
-// --- COMANDO DE AUDITORÍA: Infractores (Envío Privado) ---
+// --- COMANDO DE AUDITORÍA: Infractores (Global o por Grupo) ---
 bot.onText(/\/infractores/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
 
-    if (!(await esAdmin(chatId, userId))) return;
+    // Permitir auditoría global si es en privado, o en el grupo si es admin
+    const esChatPrivado = chatId > 0;
+    if (!esChatPrivado && !(await esAdmin(chatId, userId))) return;
+    if (esChatPrivado && !ADMINS_AUTORIZADOS.includes(userId)) return;
 
-    if (msg.chat.type !== 'private') {
+    if (!esChatPrivado) {
         bot.deleteMessage(chatId, msg.message_id).catch(() => {});
     }
 
@@ -144,7 +141,7 @@ bot.onText(/\/infractores/, async (msg) => {
         }).sort({ escalon: -1, strikes: -1 });
 
         if (infractores.length === 0) {
-            bot.sendMessage(userId, '✅ **El grupo está limpio.** No hay usuarios con penalizaciones.', { parse_mode: 'Markdown' });
+            bot.sendMessage(userId, '✅ **Todo en orden.** No hay usuarios con penalizaciones registradas.', { parse_mode: 'Markdown' });
             return;
         }
 
@@ -156,27 +153,25 @@ bot.onText(/\/infractores/, async (msg) => {
             }
         });
 
-        // Se envía DIRECTAMENTE al chat privado del administrador para que nadie más lo vea
         bot.sendMessage(userId, mensaje, { parse_mode: 'Markdown' });
     } catch (error) {
         console.error('Error en /infractores:', error.message);
     }
 });
 
-// --- COMANDO DE PERDÓN (Privado y Seguro) ---
+// --- COMANDO DE PERDÓN ---
 bot.onText(/\/perdonar/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
 
+    if (chatId > 0) return;
     if (!(await esAdmin(chatId, userId))) return;
 
-    if (msg.chat.type !== 'private') {
-        bot.deleteMessage(chatId, msg.message_id).catch(() => {});
-    }
+    bot.deleteMessage(chatId, msg.message_id).catch(() => {});
 
     try {
         if (!msg.reply_to_message) {
-            bot.sendMessage(userId, '⚠️ Error: Para perdonar a un usuario, debes usar el comando respondiendo a uno de sus mensajes.', { parse_mode: 'Markdown' });
+            bot.sendMessage(userId, '⚠️ Error: Debes responder al mensaje del usuario con /perdonar.', { parse_mode: 'Markdown' });
             return;
         }
 
@@ -198,7 +193,7 @@ bot.onText(/\/perdonar/, async (msg) => {
     }
 });
 
-// --- MODERADOR: Filtros de Cero Defectos ---
+// --- MODERADOR: Filtros Multi-Grupo ---
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -216,10 +211,12 @@ bot.on('message', async (msg) => {
     }
 
     if (!infraccion && (texto.match(/https?:\/\//i) || texto.match(/t\.me\//i) || texto.match(/telegram\.me\//i))) {
+        // Busca la lista blanca específica del grupo actual donde ocurrió el mensaje
         const config = await ConfigGrupo.findOne({ chatId: chatId });
         let enlacePermitido = false;
 
         if (config && config.linksPermitidos && config.linksPermitidos.length > 0) {
+            enlacePermitydo = config.linksPermitidos.some(dominio => texto.toLowerCase().includes(dominio));
             enlacePermitido = config.linksPermitidos.some(dominio => texto.toLowerCase().includes(dominio));
         }
 
@@ -237,8 +234,9 @@ bot.on('message', async (msg) => {
         try {
             const fileId = msg.photo[msg.photo.length - 1].file_id;
             const fileLink = await bot.getFileLink(fileId);
-            const image = await Jimp.read(fileLink);
-            const qr = jsQR(new Uint8ClampedArray(image.bitmap.data), image.bitmap.width, image.bitmap.height);
+            const image = `await` ? await Jimp.read(fileLink) : null; // Manteniendo sintaxis limpia
+            const resolvedImage = await Jimp.read(fileLink);
+            const qr = jsQR(new Uint8ClampedArray(resolvedImage.bitmap.data), resolvedImage.bitmap.width, resolvedImage.bitmap.height);
             if (qr) { infraccion = true; motivo = 'Código QR detectado'; }
         } catch (error) {}
     }
