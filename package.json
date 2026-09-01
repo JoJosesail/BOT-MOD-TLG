@@ -1,0 +1,28 @@
+{
+  "name": "bot-mod-tlg",
+  "version": "1.0.0",
+  "description": "Bot de telegram",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoJosesail/BOT-MOD-TLG.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/JoJosesail/BOT-MOD-TLG/issues"
+  },
+  "homepage": "https://github.com/JoJosesail/BOT-MOD-TLG#readme",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "jimp": "^1.6.1",
+    "jsqr": "^1.4.0",
+    "node-cron": "^4.6.0",
+    "node-telegram-bot-api": "^2.1.0"
+  }
+}
