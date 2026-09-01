@@ -56,14 +56,17 @@ bot.on('message', async (msg) => {
         motivo = 'Menciones externas prohibidas';
     }
 
-    // 4. Filtro: Códigos QR (Procesamiento visual)
+    // 4. Filtro: Códigos QR (Procesamiento visual con diagnóstico)
     if (!infraccion && msg.photo) {
         try {
-            // Seleccionar la imagen con la mayor resolución disponible
+            console.log('📸 Foto detectada, intentando descargar...');
             const fileId = msg.photo[msg.photo.length - 1].file_id;
             const fileLink = await bot.getFileLink(fileId);
+            console.log('✅ Enlace obtenido:', fileLink);
             
             const image = await Jimp.read(fileLink);
+            console.log('✅ Imagen procesada por Jimp. Tamaño:', image.bitmap.width, 'x', image.bitmap.height);
+            
             const qr = jsQR(
                 new Uint8ClampedArray(image.bitmap.data), 
                 image.bitmap.width, 
@@ -71,11 +74,14 @@ bot.on('message', async (msg) => {
             );
             
             if (qr) {
+                console.log('🚨 QR ENCONTRADO:', qr.data);
                 infraccion = true; 
                 motivo = 'Código QR detectado en la imagen';
+            } else {
+                console.log('❌ No se encontró ningún QR legible en esta imagen.');
             }
         } catch (error) {
-            console.error('Error interno escaneando imagen:', error.message);
+            console.error('⚠️ Error interno escaneando imagen:', error.message);
         }
     }
 
