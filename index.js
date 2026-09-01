@@ -5,7 +5,7 @@ const jsQR = require('jsqr');
 const cron = require('node-cron');
 const mongoose = require('mongoose');
 
-// Importamos el archivo que acabas de crear en la carpeta models
+// Importamos el molde de la base de datos
 const Usuario = require('./models/Usuario');
 
 if (!process.env.TELEGRAM_TOKEN || !process.env.MONGO_URI) {
@@ -13,7 +13,7 @@ if (!process.env.TELEGRAM_TOKEN || !process.env.MONGO_URI) {
     process.exit(1);
 }
 
-// Conexión a MongoDB
+// Conexión a MongoDB Atlas
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('🟢 Conectado exitosamente a MongoDB Atlas'))
     .catch(err => {
@@ -23,7 +23,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 
-// Limpieza diaria
+// --- 1. MANTENIMIENTO: Limpieza masiva diaria de strikes ---
 cron.schedule('0 0 * * *', async () => {
     try {
         await Usuario.updateMany({}, { $set: { strikes: 0 } });
@@ -33,11 +33,72 @@ cron.schedule('0 0 * * *', async () => {
     }
 });
 
+// --- 2. COMERCIAL: Sistema de Referidos y Panel de Control (Chat Privado) ---
+bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const nombreUsuario = msg.from.first_name || 'Usuario';
+    
+    // Captura el ID de quien lo invitó (si existe)
+    const referidoPorId = match[1] ? parseInt(match[1]) : null;
+
+    try {
+        let user = await Usuario.findOne({ userId: userId });
+
+        if (!user) {
+            // Usuario nuevo: Registrar en la base de datos
+            user = new Usuario({
+                userId: userId,
+                nombre: nombreUsuario,
+                strikes: 0,
+                escalon: 0,
+                referidoPor: referidoPorId,
+                totalReferidos: 0,
+                suscripcionActiva: false
+            });
+            await user.save();
+
+            // Sumar 1 referido al patrocinador
+            if (referidoPorId) {
+                const patrocinador = await Usuario.findOne({ userId: referidoPorId });
+                if (patrocinador) {
+                    patrocinador.totalReferidos += 1;
+                    await patrocinador.save();
+                    
+                    bot.sendMessage(referidoPorId, `🎉 ¡Felicidades! **${nombreUsuario}** se ha unido usando tu enlace. Total de referidos: ${patrocinador.totalReferidos}`, { parse_mode: 'Markdown' }).catch(() => {});
+                }
+            }
+        }
+
+        // Generar enlace personalizado usando tu bot
+        const linkReferido = `https://t.me/modjoyabot?start=${userId}`;
+
+        let mensaje = `👋 Hola **${nombreUsuario}**, bienvenido al panel de control.\n\n`;
+        mensaje += `📊 **Tu Estatus:**\n`;
+        mensaje += `▪️ Membresía Activa: ${user.suscripcionActiva ? '✅ Sí' : '❌ No'}\n`;
+        mensaje += `▪️ Nivel VIP: ${user.esVip ? '✅ Sí' : '❌ No'}\n`;
+        mensaje += `▪️ Strikes Acumulados: ${user.strikes}/3 (Escalón ${user.escalon})\n\n`;
+        mensaje += `👥 **Sistema de Referidos:**\n`;
+        mensaje += `Has invitado a: ${user.totalReferidos} personas.\n\n`;
+        mensaje += `🔗 **Tu Enlace de Invitación:**\n\`${linkReferido}\``;
+
+        bot.sendMessage(chatId, mensaje, { parse_mode: 'Markdown' });
+
+    } catch (error) {
+        console.error('Error en el sistema de referidos:', error.message);
+        bot.sendMessage(chatId, 'Hubo un error al procesar tu solicitud.');
+    }
+});
+
+// --- 3. MODERADOR: Filtros de Cero Defectos (Solo en Grupos) ---
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     
     if (msg.from.is_bot) return;
+    
+    // El bot no debe aplicar strikes en los chats privados (DMs)
+    if (msg.chat.type === 'private') return;
 
     let infraccion = false;
     let motivo = '';
@@ -82,6 +143,7 @@ bot.on('message', async (msg) => {
     }
 });
 
+// --- 4. PENALIZACIONES: Conectado a MongoDB ---
 async function aplicarStrike(chatId, userId, nombre, motivo) {
     try {
         let user = await Usuario.findOne({ userId: userId });
