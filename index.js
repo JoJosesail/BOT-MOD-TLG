@@ -3,6 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const Jimp = require('jimp');
 const jsQR = require('jsqr');
 const cron = require('node-cron');
+const mongoose = require('mongoose');
 
 // Validación de seguridad: Verifica que el token exista antes de arrancar
 if (!process.env.TELEGRAM_TOKEN) {
