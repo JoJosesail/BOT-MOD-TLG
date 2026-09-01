@@ -10,6 +10,13 @@ if (!process.env.TELEGRAM_TOKEN) {
     process.exit(1);
 }
 
+// Conexión a la Base de Datos en la Nube
+mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log('🟢 Conectado exitosamente a MongoDB Atlas'))
+    .catch(err => {
+        console.error('🔴 Error conectando a MongoDB:', err.message);
+        process.exit(1);
+    });
 // Inicialización del bot
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 
